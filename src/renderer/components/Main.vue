@@ -11,14 +11,14 @@
         <!-- Spoil the location -->
         <div class = 'spoiler'>
             <div v-if="data !== null & world !== null & spoilertext !== null">
-                <h1> {{spoilertext}} </h1>
+                <span> {{spoilertext}} </span>
             </div>
         </div>
 
         <!-- Choose a player -->
         <div class='players'>
             <div  v-if="data !== null">
-                <div v-for="(player, id) in data">
+                <div v-for="(player, id) in data" v-bind:key="id">
                     <button @click="world = id"> Player {{ id }} </button>
                 </div>
             </div>
@@ -27,10 +27,12 @@
         <!-- Choose a location -->
         <div class = 'location'>
             <div  v-if="data !== null & world !== null" class="item-container">
-                <div v-for="(groupData, group) in data[world]" class="item-group">
-                    <h3>{{group}}</h3>
-                    <div>
-                        <button v-for="item in groupData" v-bind:key="item.id" @click="spoilertext = item.local + ' ['+ item.world +']'" v-if="item.item != undefined"> {{item.item}} </button>
+                <div v-for="(groupData, group) in data[world]" v-bind:key="group">
+                    <div class="item-group" v-if="groupData.length !== 0">
+                        <h3>{{group}}</h3>
+                        <div>
+                            <button v-for="item in groupData" v-bind:key="item.id" @click="setSpoilertext(item)"> {{item.item}} </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -49,9 +51,16 @@
 /* eslint-disable */
 
 const parsePlayers = async (data) => {
-  console.log(data)
   var tmp = {}
-  await [...Array(data.settings.world_count).keys()].map(i => {
+//   Handling legacy versions
+  var world_count = null
+  if (data[":version"].includes("4.13")) {
+      world_count = data[":settings"].world_count
+  } else if (data[":version"].includes("5.1")) {
+      world_count = data["settings"].world_count
+  }
+//   Build temp array
+  await [...Array(world_count).keys()].map(i => {
       tmp[i+1] = {
           Items: [],
           Songs: [],
@@ -69,13 +78,28 @@ const parsePlayers = async (data) => {
           Compasses: [],
           Keys: [],
           BossKeys: [],
+          Skulltulas: [],
           Other: [],
         }
   })
-  for (const world in data.locations) {
-      for (const local in data.locations[world]) {
-        //   tmp[data.locations[world][local].player][local] = {...data.locations[world][local], ...{local: local, world: world}}
-        const location = data.locations[world][local]
+
+  var locations = null
+  if (world_count > 1){
+      locations = data.locations
+  } else {
+      locations = {"": data.locations}
+  }
+
+//   Parse through everything
+  for (const world in locations) {
+      for (const local in locations[world]) {
+        var location = locations[world][local]
+        if (world_count === 1) {
+            location = {
+                "item": (location.item == undefined) ? location : location.item,
+                "player": 1
+            }
+        }
         if (location.item.includes("Medallion")) {
             tmp[location.player].Medallions.push({...location, ...{local: local, world: world}})
         } else if (
@@ -86,7 +110,10 @@ const parsePlayers = async (data) => {
             tmp[location.player].Jewels.push({...location, ...{local: local, world: world}})
         } else if (location.item.includes("Tunic")) {
             tmp[location.player].Tunics.push({...location, ...{local: local, world: world}})
-        } else if (location.item.includes("Sword")) {
+        } else if (
+            location.item.includes("Kokiri Sword") |
+            location.item.includes("Biggoron Sword")
+        ) {
             tmp[location.player].Swords.push({...location, ...{local: local, world: world}})
         } else if (location.item.includes("Shield")) {
             tmp[location.player].Shields.push({...location, ...{local: local, world: world}})
@@ -145,11 +172,26 @@ const parsePlayers = async (data) => {
             tmp[location.player].BossKeys.push({...location, ...{local: local, world: world}})
         } else if (location.item.includes("Small Key")) {
             tmp[location.player].Keys.push({...location, ...{local: local, world: world}})
+        } else if (location.item.includes("Skulltula")) {
+            tmp[location.player].Skulltulas.push({...location, ...{local: local, world: world}})
+        } else if (
+            location.item.includes("Pocket") | 
+            location.item.includes("Odd") | 
+            location.item.includes("Poacher") | 
+            location.item.includes("Broken") | 
+            location.item.includes("Prescription") | 
+            location.item.includes("Eyeball") | 
+            location.item.includes("Eyedrop") | 
+            location.item.includes("Claim") | 
+            location.item.includes("Egg")
+        ) {
+            tmp[location.player].Trade.push({...location, ...{local: local, world: world}})
         } else {
             tmp[location.player].Other.push({...location, ...{local: local, world: world}})
         }
       }
   }
+//   Sort items alphabetically
   function compare(a, b) {
       const itemA = a.item.toUpperCase()
       const itemB = b.item.toUpperCase()
@@ -167,7 +209,6 @@ const parsePlayers = async (data) => {
       }
   }
   
-  console.log(tmp)
   return tmp
   
 }
@@ -182,18 +223,19 @@ export default {
       const file = ev.target.files[0]
       const reader = new FileReader()
       reader.addEventListener('load', e => {
-        // console.log(e.target.result, JSON.parse(reader.result))
         const data = JSON.parse(reader.result)
         parsePlayers(data).then(tmp => {
             this.data = tmp
-            console.log(tmp)
         })
-        
-        // var tmp = {}
-        // console.log([])
-        // await [...Array(5).keys()].map(i => console.log(i))
       });
       reader.readAsText(file)
+    },
+    setSpoilertext (item) {
+        if (item.world === "") {
+            this.spoilertext = item.local
+        } else {
+            this.spoilertext = item.local + ' [' + item.world + ']'
+        }
     }
   },
   data () {
@@ -279,10 +321,15 @@ export default {
       display: flex;
       flex-direction: column;
       width: 25vmin;
+      max-height: 50vh;
       align-items: center;
       justify-content: center;
       margin: 2vmin;
       color: white;
+  }
+
+  .item-group div {
+    overflow-y: auto;
   }
 
   .item-group button {
@@ -298,35 +345,13 @@ export default {
       background-color: rgb(0, 53, 0);
   }
 
-  /* .itemgroups {
-      display: flex;
-      width: 100%;
-      flex-direction: row;
-      flex-flow: wrap;
-  }
-
-  .group {
-      width: 30vmin;
-      height: auto;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-  }
-
-  .items {
-      display: flex;
-      flex-direction: row;
-  }
-
-  .items button {
-      width: 100%;
-  } */
-
     /* Show the spoiled location */
   .spoiler {
       background-color: rgb(0, 146, 0);
       display: flex;
       align-items: center;
       justify-content: center;
+      font-size: 1.7em;
+      font-weight: bold;
   }
 </style>
