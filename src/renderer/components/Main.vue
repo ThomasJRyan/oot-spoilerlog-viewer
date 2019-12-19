@@ -226,6 +226,8 @@ export default {
         const data = JSON.parse(reader.result)
         parsePlayers(data).then(tmp => {
             this.data = tmp
+            this.world = null
+            this.spoilertext = null
         })
       });
       reader.readAsText(file)
